@@ -1,10 +1,16 @@
 // snippets/useAuth.ts
 
-import { useContext, useEffect, useState, createContext, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 
+interface User {
+  id: string;
+  email: string;
+  access_token?: string;
+}
+
 interface AuthContextType {
-  user: any;
+  user: User | null;
   signUp: (email: string, password: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -12,32 +18,57 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<any>(null);
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    const session = supabase.auth.getSession();
-    setUser(session?.user ?? null);
+    const getSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session) {
+        setUser({
+          id: data.session.user.id,
+          email: data.session.user.email,
+          access_token: data.session.access_token,
+        });
+      }
+    };
+    getSession();
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        setUser({
+          id: session.user.id,
+          email: session.user.email,
+          access_token: session.access_token,
+        });
+      } else {
+        setUser(null);
+      }
     });
 
     return () => {
-      listener?.unsubscribe();
+      authListener?.subscription.unsubscribe();
     };
   }, []);
 
   const signUp = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) throw new Error(error.message);
-    setUser(data.user);
+    setUser({
+      id: data.user?.id || '',
+      email: data.user?.email || '',
+      access_token: data.session?.access_token,
+    });
   };
 
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw new Error(error.message);
-    setUser(data.user);
+    setUser({
+      id: data.user?.id || '',
+      email: data.user?.email || '',
+      access_token: data.session?.access_token,
+    });
   };
 
   const signOut = async () => {
